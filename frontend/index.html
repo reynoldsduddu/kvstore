@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Key-Value Store</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Key-Value Store</h1>
+      <hr />
+      <div class="form-container">
+        <h2>All Key-Value Pairs</h2>
+        <button id="get-all-button">Refresh List</button>
+        <ul id="key-value-list"></ul>
+        <div id="pagination-controls">
+          <button id="prev-page-button">Previous</button>
+          <span id="page-info"></span>
+          <button id="next-page-button">Next</button>
+        </div>
+      </div>
+      <!-- Put Form -->
+      <div class="form-container">
+        <h2>Store a Key-Value Pair</h2>
+        <form id="put-form">
+          <input type="text" id="put-key" placeholder="Key" required />
+          <input type="text" id="put-value" placeholder="Value" required />
+          <button type="submit">Store</button>
+        </form>
+      </div>
+
+      <!-- Get Form -->
+      <div class="form-container">
+        <h2>Retrieve a Value</h2>
+        <form id="get-form">
+          <input type="text" id="get-key" placeholder="Key" required />
+          <button type="submit">Retrieve</button>
+        </form>
+        <p id="get-result"></p>
+      </div>
+
+      <!-- Delete Form -->
+      <div class="form-container">
+        <h2>Delete a Key-Value Pair</h2>
+        <form id="delete-form">
+          <input type="text" id="delete-key" placeholder="Key" required />
+          <button type="submit">Delete</button>
+        </form>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
