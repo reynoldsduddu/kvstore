@@ -47,6 +47,22 @@ document.getElementById("delete-form").addEventListener("submit", async (e) => {
   }
 });
 
+document
+  .getElementById("get-all-button")
+  .addEventListener("click", async () => {
+    const response = await fetch("http://localhost:8081/get-all");
+    const data = await response.json();
+
+    const list = document.getElementById("key-value-list");
+    list.innerHTML = ""; // Clear the list
+
+    for (const [key, value] of Object.entries(data)) {
+      const item = document.createElement("li");
+      item.textContent = `${key}: ${value}`;
+      list.appendChild(item);
+    }
+  });
+
 let currentPage = 1;
 const limit = 10; // Number of items per page
 
