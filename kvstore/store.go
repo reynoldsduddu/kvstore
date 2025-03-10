@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	_ "modernc.org/sqlite" // Pure Go SQLite driver
+	_ "modernc.org/sqlite"
 )
 
 // KVStore represents a key-value store backed by SQLite.
