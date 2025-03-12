@@ -23,7 +23,7 @@ func NewConsensus(myAddress string, nodes []string) *Consensus {
 	serverState := NewServerState(myAddress)
 	priorityManager := &PriorityManager{}
 	priorityManager.Init(len(nodes), (len(nodes)/2)+1, 1, 0.01, true)
-
+	fmt.Println("Nodes in consensus:", nodes)
 	return &Consensus{
 		State:      serverState,
 		prioMgr:    priorityManager,
@@ -41,19 +41,20 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 
 	// Ensure the node is the leader
 	if !c.State.IsLeader() {
-		fmt.Println("❌ Rejecting proposal: This node is NOT the leader.")
+		fmt.Println("Rejecting proposal: This node is NOT the leader.")
 		return false
 	}
 
 	majority := c.prioMgr.GetMajority()
 	approvalWeight := c.prioMgr.GetLeaderWeight()
 
-	fmt.Printf("📊 Majority required: %f, Current leader weight: %f\n", majority, approvalWeight)
+	fmt.Printf("Majority required: %f, Current leader weight: %f\n", majority, approvalWeight)
 
 	for _, node := range c.nodes {
 		if node == c.State.GetMyAddress() {
 			continue // Skip self
 		}
+		fmt.Printf("🔎 Checking if approval is needed from: %s\n", node)
 
 		// Identify node index based on IP
 		nodeIndex := -1
@@ -65,7 +66,7 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 		}
 
 		if nodeIndex == -1 {
-			fmt.Printf("❌ Node %s not found in node list\n", node)
+			fmt.Printf("Node %s not found in node list\n", node)
 			continue
 		}
 
@@ -77,13 +78,13 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 		}
 
 		if approvalWeight > majority {
-			fmt.Println("✅ Consensus REACHED. Committing change.")
+			fmt.Println("Consensus REACHED. Committing change.")
 			c.commitChange(opType, key, value)
 			return true
 		}
 	}
 
-	fmt.Println("❌ Consensus NOT REACHED. Rejecting request.")
+	fmt.Println("Consensus NOT REACHED. Rejecting request.")
 	return false
 }
 
@@ -100,30 +101,30 @@ func (c *Consensus) requestApproval(node, opType, key, value string) bool {
 
 	resp, err := c.httpClient.Post(url, "application/json", bytes.NewReader(reqBody))
 	if err != nil {
-		fmt.Printf("❌ Approval request to %s failed: %v\n", url, err)
+		fmt.Printf("Approval request to %s failed: %v\n", url, err)
 		return false
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("❌ Approval request to %s rejected with status %d\n", url, resp.StatusCode)
+		fmt.Printf("Approval request to %s rejected with status %d\n", url, resp.StatusCode)
 		return false
 	}
 
-	fmt.Printf("✅ Approval granted by %s for key=%s\n", node, key)
+	fmt.Printf("Approval granted by %s for key=%s\n", node, key)
 	return true
 }
 
 // commitChange applies the agreed change.
 func (c *Consensus) commitChange(opType, key, value string) {
-	fmt.Printf("📜 Consensus reached: %s %s = %s\n", opType, key, value)
+	fmt.Printf("Consensus reached: %s %s = %s\n", opType, key, value)
 }
 
 // HandleApproval allows followers to approve leader proposals.
 func (c *Consensus) HandleApproval(w http.ResponseWriter, r *http.Request) {
 	if !c.State.IsFollower() {
 		http.Error(w, "Only followers can approve", http.StatusForbidden)
-		fmt.Println("❌ Leader cannot approve its own requests.")
+		fmt.Println("Leader cannot approve its own requests.")
 		return
 	}
 
@@ -133,6 +134,6 @@ func (c *Consensus) HandleApproval(w http.ResponseWriter, r *http.Request) {
 	key := req["key"]
 	value := req["value"]
 
-	fmt.Printf("✅ Approval granted: %s %s = %s\n", opType, key, value)
+	fmt.Printf("Approval granted: %s %s = %s\n", opType, key, value)
 	w.WriteHeader(http.StatusOK)
 }
