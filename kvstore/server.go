@@ -2,9 +2,9 @@ package kvstore
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path/filepath"
-	"strconv"
 )
 
 // Server represents an HTTP server for the key-value store.
@@ -12,45 +12,47 @@ type Server struct {
 	store *KVStore
 }
 
-// NewServer creates a new instance of Server.
+// NewServer initializes an HTTP server for the store.
 func NewServer(store *KVStore) *Server {
-	return &Server{
-		store: store,
-	}
+	return &Server{store: store}
 }
 
-// ServeStatic serves static files from the frontend directory.
+// ServeStatic serves static files (HTML, JS, CSS).
 func (s *Server) ServeStatic(w http.ResponseWriter, r *http.Request) {
-	// Get the requested file path
 	path := r.URL.Path
 	if path == "/" {
 		path = "/index.html"
 	}
-
-	// Serve the file from the frontend directory
 	http.ServeFile(w, r, filepath.Join("frontend", path))
 }
 
-// PutHandler handles PUT requests to store a key-value pair.
+// PutHandler handles distributed PUT requests.
 func (s *Server) PutHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Key   string `json:"key"`
 		Value string `json:"value"`
 	}
+
+	fmt.Println("📥 Received PUT request...")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		fmt.Println("❌ Failed to decode JSON:", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	if err := s.store.Put(req.Key, req.Value); err != nil {
-		http.Error(w, "Failed to store key-value pair", http.StatusInternalServerError)
+	fmt.Printf("🔹 Storing key=%s, value=%s...\n", req.Key, req.Value)
+	err := s.store.Put(req.Key, req.Value)
+	if err != nil {
+		fmt.Printf("❌ Consensus failed for PUT key=%s: %v\n", req.Key, err)
+		http.Error(w, fmt.Sprintf("Consensus not reached: %v", err), http.StatusConflict)
 		return
 	}
 
+	fmt.Printf("✅ PUT successful: key=%s, value=%s\n", req.Key, req.Value)
 	w.WriteHeader(http.StatusOK)
 }
 
-// GetHandler handles GET requests to retrieve a value for a key.
+// GetHandler handles GET requests.
 func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Query().Get("key")
 	if key == "" {
@@ -71,7 +73,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"value": value})
 }
 
-// DeleteHandler handles DELETE requests to remove a key-value pair.
+// DeleteHandler handles distributed DELETE requests.
 func (s *Server) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Query().Get("key")
 	if key == "" {
@@ -80,101 +82,35 @@ func (s *Server) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.store.Delete(key); err != nil {
-		http.Error(w, "Failed to delete key-value pair", http.StatusInternalServerError)
+		http.Error(w, "Consensus not reached", http.StatusConflict)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 }
 
-type PaginatedResponse struct {
-	Data       map[string]string `json:"data"`
-	Page       int               `json:"page"`
-	Limit      int               `json:"limit"`
-	TotalItems int               `json:"totalItems"`
-	TotalPages int               `json:"totalPages"`
-}
+// ApproveHandler allows followers to approve leader proposals.
+func (s *Server) ApproveHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("📥 Received approval request...")
 
-// GetAllHandler handles GET requests to retrieve paginated key-value pairs.
-func (s *Server) GetAllHandler(w http.ResponseWriter, r *http.Request) {
-	// Parse query parameters
-	pageStr := r.URL.Query().Get("page")
-	limitStr := r.URL.Query().Get("limit")
-
-	// Set default values if not provided
-	page := 1
-	limit := 10
-
-	if pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
-	}
-
-	// Calculate the offset
-	offset := (page - 1) * limit
-
-	// Query the database for paginated results
-	rows, err := s.store.db.Query("SELECT key, value FROM kv_store LIMIT ? OFFSET ?", limit, offset)
-	if err != nil {
-		http.Error(w, "Failed to retrieve key-value pairs", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	// Create a map to store key-value pairs
-	data := make(map[string]string)
-
-	// Iterate through the rows and populate the map
-	for rows.Next() {
-		var key, value string
-		if err := rows.Scan(&key, &value); err != nil {
-			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
-			return
-		}
-		data[key] = value
-	}
-
-	// Get the total number of items
-	var totalItems int
-	err = s.store.db.QueryRow("SELECT COUNT(*) FROM kv_store").Scan(&totalItems)
-	if err != nil {
-		http.Error(w, "Failed to count key-value pairs", http.StatusInternalServerError)
+	// Check if this node is a follower
+	if s.store.consensus.State.IsLeader() {
+		fmt.Println("❌ This node is a leader and cannot approve its own requests.")
+		http.Error(w, "Leaders cannot approve their own requests", http.StatusForbidden)
 		return
 	}
 
-	// Calculate the total number of pages
-	totalPages := (totalItems + limit - 1) / limit
-
-	// Return the data and metadata as JSON
-	response := PaginatedResponse{
-		Data:       data,
-		Page:       page,
-		Limit:      limit,
-		TotalItems: totalItems,
-		TotalPages: totalPages,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	// Simulate approval (followers always approve)
+	w.WriteHeader(http.StatusOK)
+	fmt.Println("✅ Approval granted by follower.")
 }
 
-// Start starts the HTTP server on the specified address.
+// Start initializes the HTTP server.
 func (s *Server) Start(addr string) error {
-	// Serve static files
 	http.Handle("/", http.HandlerFunc(s.ServeStatic))
-
-	// Serve API endpoints
 	http.HandleFunc("/put", s.PutHandler)
 	http.HandleFunc("/get", s.GetHandler)
 	http.HandleFunc("/delete", s.DeleteHandler)
-	http.HandleFunc("/get-all", s.GetAllHandler)
-	// Start the server
+	http.HandleFunc("/approve", s.ApproveHandler)
 	return http.ListenAndServe(addr, nil)
 }
