@@ -19,6 +19,7 @@ type KVStore struct {
 // NewKVStore initializes the store with consensus.
 func NewKVStore(dbPath string, consensus *consensus.Consensus) (*KVStore, error) {
 	db, err := sql.Open("sqlite", dbPath)
+	fmt.Println("📂 Opening database at:", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %v", err)
 	}

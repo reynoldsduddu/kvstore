@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strconv"
 )
 
@@ -20,11 +19,14 @@ func NewServer(store *KVStore) *Server {
 
 // ServeStatic serves static files (HTML, JS, CSS).
 func (s *Server) ServeStatic(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Path
-	if path == "/" {
-		path = "/index.html"
+	var path string
+	if r.URL.Path == "/" {
+		path = "/app/frontend/index.html"
+	} else {
+		path = "/app/frontend" + r.URL.Path
 	}
-	http.ServeFile(w, r, filepath.Join("frontend", path))
+
+	http.ServeFile(w, r, path)
 }
 
 // PutHandler handles distributed PUT requests.

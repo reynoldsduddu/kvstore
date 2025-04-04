@@ -11,7 +11,7 @@ import (
 
 // Load cluster configuration
 func loadClusterConfig() ([]config.NodeConfig, int) {
-	nodes, err := config.LoadClusterConfig("config/cluster.conf")
+	nodes, err := config.LoadClusterConfig("/app/config/cluster.conf")
 	if err != nil {
 		fmt.Println("Error loading config:", err)
 		os.Exit(1)
@@ -27,6 +27,8 @@ func loadClusterConfig() ([]config.NodeConfig, int) {
 }
 
 func main() {
+	cwd, _ := os.Getwd()
+	fmt.Println("🔍 Current working directory:", cwd)
 	nodes, serverID := loadClusterConfig()
 	myNode := nodes[serverID]
 
@@ -39,7 +41,7 @@ func main() {
 	consensusModule := consensus.NewConsensus(myNode.IP+":"+myNode.Port, nodeAddresses)
 
 	// Initialize KV Store with consensus
-	store, err := kvstore.NewKVStore("kvstore.db", consensusModule)
+	store, err := kvstore.NewKVStore("/data/kvstore.db", consensusModule)
 	if err != nil {
 		fmt.Println("Failed to initialize database:", err)
 		return

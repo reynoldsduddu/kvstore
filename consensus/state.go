@@ -19,7 +19,7 @@ func NewServerState(myAddress string) *ServerState {
 	}
 
 	// Automatically set the first node as leader
-	if myAddress == "127.0.0.1:8081" {
+	if myAddress == "node0:8081" {
 		state.SetLeader(myAddress)
 		fmt.Println("👑 This node is the leader.")
 	} else {
