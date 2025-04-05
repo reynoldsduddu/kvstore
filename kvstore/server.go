@@ -3,6 +3,7 @@ package kvstore
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 )
@@ -221,16 +222,81 @@ func (s *Server) HeartbeatHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func (s *Server) PriorityHandler(w http.ResponseWriter, r *http.Request) {
+	weight := s.store.consensus.GetNodeWeight(s.store.consensus.State.GetMyAddress())
+	json.NewEncoder(w).Encode(weight)
+}
+
+// set leader
+func (s *Server) SetLeaderHandler(w http.ResponseWriter, r *http.Request) {
+	var payload map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	leader, ok := payload["leader"]
+	if ok {
+		s.store.consensus.State.SetLeader(leader)
+		fmt.Printf("🔄 Leader updated to: %s\n", leader)
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// LeaderHandler returns the current leader's address.
+func (s *Server) LeaderHandler(w http.ResponseWriter, r *http.Request) {
+	leader := s.store.consensus.State.GetLeader()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"leader": leader})
+}
+
+// ProxyHandler forwards unknown requests to the current leader
+func (s *Server) ProxyHandler(w http.ResponseWriter, r *http.Request) {
+	leader := s.store.consensus.State.GetLeader()
+	if leader == "" {
+		http.Error(w, "No leader available", http.StatusServiceUnavailable)
+		return
+	}
+
+	url := fmt.Sprintf("http://%s%s", leader, r.URL.Path)
+	req, err := http.NewRequest(r.Method, url, r.Body)
+	if err != nil {
+		http.Error(w, "Failed to create proxy request", http.StatusInternalServerError)
+		return
+	}
+
+	req.Header = r.Header
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		http.Error(w, "Leader not reachable", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	for key, values := range resp.Header {
+		for _, v := range values {
+			w.Header().Add(key, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+
 // Start initializes the HTTP server.
 func (s *Server) Start(addr string) error {
 	fmt.Println("Starting HTTP server on", addr)
 	http.Handle("/", http.HandlerFunc(s.ServeStatic))
-	http.HandleFunc("/put", s.PutHandler)
-	http.HandleFunc("/get", s.GetHandler)
-	http.HandleFunc("/get-all", s.GetAllHandler)
-	http.HandleFunc("/delete", s.DeleteHandler)
-	http.HandleFunc("/approve", s.ApproveHandler)
-	http.HandleFunc("/replicate", s.ReplicationHandler)
+	http.HandleFunc("/api/put", s.PutHandler)
+	http.HandleFunc("/api/get", s.GetHandler)
+	http.HandleFunc("/api/get-all", s.GetAllHandler)
+	http.HandleFunc("/api/delete", s.DeleteHandler)
+	http.HandleFunc("/api/approve", s.ApproveHandler)
+	http.HandleFunc("/api/replicate", s.ReplicationHandler)
+	http.HandleFunc("/api/heartbeat", s.HeartbeatHandler)
+	http.HandleFunc("/api/priority", s.PriorityHandler)
+	http.HandleFunc("/api/set-leader", s.SetLeaderHandler)
+	http.HandleFunc("/api/leader", s.LeaderHandler)
+	http.HandleFunc("/api/", s.ProxyHandler) // Catch-all fallback
 
 	return http.ListenAndServe(addr, nil)
 }

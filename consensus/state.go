@@ -3,13 +3,27 @@ package consensus
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 // ServerState tracks if a node is a leader or a follower.
 type ServerState struct {
-	mu        sync.RWMutex
-	myAddress string
-	leader    string
+	mu            sync.RWMutex
+	myAddress     string
+	leader        string
+	lastHeartbeat time.Time
+}
+
+func (s *ServerState) UpdateHeartbeat() {
+	s.mu.Lock()
+	s.lastHeartbeat = time.Now()
+	s.mu.Unlock()
+}
+
+func (s *ServerState) IsHeartbeatStale(timeout time.Duration) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return time.Since(s.lastHeartbeat) > timeout
 }
 
 // NewServerState initializes a node's state.
