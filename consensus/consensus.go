@@ -115,9 +115,31 @@ func (c *Consensus) requestApproval(node, opType, key, value string) bool {
 	return true
 }
 
-// commitChange applies the agreed change.
+// commitChange applies the agreed change and followers replicate.
 func (c *Consensus) commitChange(opType, key, value string) {
 	fmt.Printf("Consensus reached: %s %s = %s\n", opType, key, value)
+
+	// Replicate to all followers
+	for _, node := range c.nodes {
+		if node == c.State.GetMyAddress() {
+			continue // skip self
+		}
+
+		go func(target string) {
+			payload := map[string]string{
+				"opType": opType,
+				"key":    key,
+				"value":  value,
+			}
+			data, _ := json.Marshal(payload)
+			_, err := c.httpClient.Post("http://"+target+"/replicate", "application/json", bytes.NewReader(data))
+			if err != nil {
+				fmt.Printf("❌ Failed to replicate to %s: %v\n", target, err)
+			} else {
+				fmt.Printf("✅ Replicated to %s\n", target)
+			}
+		}(node)
+	}
 }
 
 // HandleApproval allows followers to approve leader proposals.

@@ -82,6 +82,17 @@ func (kv *KVStore) Delete(key string) error {
 	}
 	return fmt.Errorf("consensus not reached")
 }
+func (kv *KVStore) ReplicatedPut(key, value string) {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	kv.db.Exec(`INSERT OR REPLACE INTO kv_store (key, value) VALUES (?, ?)`, key, value)
+}
+
+func (kv *KVStore) ReplicatedDelete(key string) {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	kv.db.Exec(`DELETE FROM kv_store WHERE key = ?`, key)
+}
 
 // Close closes the database connection.
 func (kv *KVStore) Close() error {

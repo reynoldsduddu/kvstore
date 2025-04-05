@@ -186,6 +186,41 @@ func (s *Server) GetAllHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// ReplicationRequest is the body sent to followers
+type ReplicationRequest struct {
+	OpType string `json:"opType"` // "PUT" or "DELETE"
+	Key    string `json:"key"`
+	Value  string `json:"value"` // only used for PUT
+}
+
+func (s *Server) ReplicationHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("📥 Received REPLICATION request!")
+
+	var req ReplicationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	fmt.Printf("📦 Replicating %s: %s = %s\n", req.OpType, req.Key, req.Value)
+
+	if req.OpType == "PUT" {
+		s.store.ReplicatedPut(req.Key, req.Value)
+	} else if req.OpType == "DELETE" {
+		s.store.ReplicatedDelete(req.Key)
+	} else {
+		http.Error(w, "Unknown operation", http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// Leader status
+func (s *Server) HeartbeatHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
 // Start initializes the HTTP server.
 func (s *Server) Start(addr string) error {
 	fmt.Println("Starting HTTP server on", addr)
@@ -195,5 +230,7 @@ func (s *Server) Start(addr string) error {
 	http.HandleFunc("/get-all", s.GetAllHandler)
 	http.HandleFunc("/delete", s.DeleteHandler)
 	http.HandleFunc("/approve", s.ApproveHandler)
+	http.HandleFunc("/replicate", s.ReplicationHandler)
+
 	return http.ListenAndServe(addr, nil)
 }
