@@ -27,6 +27,11 @@ func loadClusterConfig() ([]config.NodeConfig, int) {
 }
 
 func main() {
+	mode := os.Getenv("CONSENSUS_MODE")
+	if mode != "cabinet" && mode != "cabinet++" {
+		fmt.Println("⚠️ Invalid CONSENSUS_MODE, defaulting to cabinet++")
+		mode = "cabinet++"
+	}
 	cwd, _ := os.Getwd()
 	//peers := []string{"8081", "8082", "8083", "8084", "8085"} // or loaded from config
 	//consensus.InitCabinetWeights(peers)
@@ -40,7 +45,8 @@ func main() {
 		nodeAddresses = append(nodeAddresses, node.IP+":"+node.Port)
 	}
 	// Initialize consensus
-	consensusModule := consensus.NewConsensus(myNode.IP+":"+myNode.Port, nodeAddresses)
+	consensusModule := consensus.NewConsensus(myNode.IP+":"+myNode.Port, nodeAddresses, mode)
+
 	if consensusModule.State.IsLeader() {
 		go consensusModule.StartHeartbeatBroadcast() // ✅ manually start it at launch
 	}

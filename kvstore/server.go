@@ -45,7 +45,20 @@ func (s *Server) PutHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Printf("🔹 Storing key=%s, value=%s...\n", req.Key, req.Value)
-	err := s.store.Put(req.Key, req.Value)
+	var err error
+	if s.store.consensus.Mode == "cabinet" {
+		if !s.store.consensus.State.IsLeader() {
+			http.Error(w, "Cabinet mode: only leader can propose", http.StatusForbidden)
+			return
+		}
+		err = s.store.Put(req.Key, req.Value)
+	} else if s.store.consensus.Mode == "cabinet++" {
+		err = s.store.Put(req.Key, req.Value)
+	} else {
+		http.Error(w, "Unknown consensus mode", http.StatusInternalServerError)
+		return
+	}
+
 	if err != nil {
 		fmt.Printf("Consensus failed for PUT key=%s: %v\n", req.Key, err)
 		http.Error(w, fmt.Sprintf("Consensus not reached: %v", err), http.StatusConflict)

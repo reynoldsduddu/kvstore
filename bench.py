@@ -18,10 +18,15 @@ def get_leader(base_urls):
         try:
             res = requests.get(f"http://{url}/api/leader", timeout=1)
             if res.status_code == 200:
-                return res.json()["leader"]
+                leader = res.json()["leader"]
+                # Map internal name (e.g., node0:8081) to exposed port (e.g., localhost:8081)
+                for u in base_urls:
+                    if leader.endswith(u.split(":")[1]):  # match port
+                        return u
         except:
             continue
     return None
+
 
 def send_put(url, key, value):
     try:

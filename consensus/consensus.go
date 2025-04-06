@@ -14,6 +14,7 @@ import (
 
 // Consensus manages distributed agreement between nodes.
 type Consensus struct {
+	Mode          string // "cabinet" or "cabinet++"
 	mu            sync.Mutex
 	State         *ServerState
 	prioMgr       *PriorityManager
@@ -25,7 +26,7 @@ type Consensus struct {
 }
 
 // NewConsensus initializes consensus with PriorityManager.
-func NewConsensus(myAddress string, nodes []string) *Consensus {
+func NewConsensus(myAddress string, nodes []string, mode string) *Consensus {
 	serverState := NewServerState(myAddress)
 	priorityManager := &PriorityManager{}
 	priorityManager.Init(len(nodes), (len(nodes)/2)+1, 1, 0.01, true)
@@ -33,6 +34,7 @@ func NewConsensus(myAddress string, nodes []string) *Consensus {
 		CabinetWeights = make(map[string]float64)
 	}
 	cons := &Consensus{
+		Mode:          mode,
 		State:         serverState,
 		prioMgr:       priorityManager,
 		nodes:         nodes,
@@ -71,7 +73,17 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 		node     string
 		duration time.Duration
 	}
+	if c.Mode == "cabinet" {
+		// Cabinet: only leader proposes, skip approval requests
+		if !c.State.IsLeader() {
+			fmt.Println("❌ Non-leader tried to propose in Cabinet mode")
+			return false
+		}
 
+		fmt.Println("📥 Cabinet mode: leader directly committing change")
+		c.commitChange(opType, key, value)
+		return true
+	}
 	proposer := c.State.GetMyAddress()
 	fullAddr := serverIDFromAddress(proposer) + ":" + portFromAddress(proposer)
 
