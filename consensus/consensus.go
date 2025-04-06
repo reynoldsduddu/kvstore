@@ -142,23 +142,10 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 			// 🔁 Update Cabinet Weights (skip for dummy writes)
 			if !isDummyKey(key) {
 				if !c.State.IsLeader() {
-					// 🧠 Sync nodeAlive map from leader
 					leader := c.State.GetLeader()
 					if leader != "" {
-						resp, err := c.httpClient.Get("http://" + leader + "/api/status")
-						if err == nil && resp.StatusCode == http.StatusOK {
-							var status map[string]bool
-							if err := json.NewDecoder(resp.Body).Decode(&status); err == nil {
-								c.aliveStatusMu.Lock()
-								for k, v := range status {
-									c.nodeAlive[k] = v
-								}
-								c.aliveStatusMu.Unlock()
-								fmt.Println("✅ Synced nodeAlive map from leader:", status)
-							}
-						} else {
-							fmt.Println("⚠️ Could not sync nodeAlive from leader:", err)
-						}
+						body := bytes.NewBuffer([]byte(fmt.Sprintf(`{"sender": "%s"}`, c.State.GetMyAddress())))
+						http.Post("http://"+leader+"/api/notify-consensus", "application/json", body)
 					}
 				}
 				c.UpdateCabinetWeights(ordered)
@@ -179,6 +166,20 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 
 func isDummyKey(key string) bool {
 	return strings.HasPrefix(key, "__cabinet_dummy__")
+}
+
+func (c *Consensus) GetPeers() []string {
+	return c.nodes
+}
+
+func (c *Consensus) MarkNodeAlive(address string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.nodeAlive == nil {
+		c.nodeAlive = make(map[string]bool)
+	}
+	c.nodeAlive[address] = true
+	fmt.Printf("✅ Marked %s as alive via NotifyConsensus\n", address)
 }
 
 func (c *Consensus) getServerIDFromAddress(addr string) serverID {
@@ -540,7 +541,13 @@ func (c *Consensus) UpdateCabinetWeights(responders []string) {
 	}
 	fmt.Printf("📊 Total alive weight before thresholding: %.2f\n", aliveWeight)
 
-	CabinetThreshold = quorumRatio * aliveWeight
+	if aliveWeight == 0 {
+		fmt.Println("⚠️ No alive nodes with valid weights — skipping CabinetThreshold update to avoid unsafe quorum.")
+		return
+	}
+
+	CabinetThreshold = math.Max(quorumRatio*aliveWeight, 0.51)
+	fmt.Printf("📊 Total alive weight before thresholding: %.2f\n", aliveWeight)
 
 	fmt.Println("🔁 Updated Cabinet Weights (Normalized):")
 	for node, weight := range CabinetWeights {

@@ -328,6 +328,25 @@ func (s *Server) WeightsHandler(w http.ResponseWriter, r *http.Request) {
 	weights := s.store.consensus.GetCabinetWeights()
 	json.NewEncoder(w).Encode(weights)
 }
+func (s *Server) NotifyConsensusHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.store.consensus.State.IsLeader() {
+		http.Error(w, "Not leader", http.StatusForbidden)
+		return
+	}
+
+	var payload struct {
+		Sender string `json:"sender"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	fmt.Printf("🔔 Received consensus notification from %s\n", payload.Sender)
+	s.store.consensus.MarkNodeAlive(payload.Sender)
+	s.store.consensus.UpdateCabinetWeights(s.store.consensus.GetPeers())
+	w.WriteHeader(http.StatusOK)
+}
 
 // Start initializes the HTTP server.
 func (s *Server) Start(addr string) error {
@@ -345,6 +364,7 @@ func (s *Server) Start(addr string) error {
 	http.HandleFunc("/api/leader", s.LeaderHandler)
 	http.HandleFunc("/api/weights", s.WeightsHandler)
 	http.HandleFunc("/api/status", s.StatusHandler)
+	http.HandleFunc("/api/notify-consensus", s.NotifyConsensusHandler)
 
 	http.HandleFunc("/api/", s.ProxyHandler) // Catch-all fallback
 

@@ -78,7 +78,8 @@ const limit = 10; // Number of items per page
 // Fetch and display key-value pairs
 async function fetchKeyValuePairs(page) {
   try {
-    const response = await fetch("/api/get-all?page=${page}&limit=${limit}");
+    const response = await fetch(`/api/get-all?page=${page}&limit=${limit}`);
+
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -210,8 +211,22 @@ async function fetchAndRenderWeights() {
                   const full = filtered[index];
 
                   if (!full.isAlive) return `${label}: ❌ DEAD NODE`;
+
+                  const aliveWeights = filtered
+                    .filter((d) => d.isAlive)
+                    .map((d) => d.val);
+
+                  const allEqual =
+                    aliveWeights.length > 0 &&
+                    aliveWeights.every(
+                      (w) => Math.abs(w - aliveWeights[0]) < 0.001
+                    );
+
+                  if (allEqual) return `${label}: ✅ (Equal Weights Assigned)`;
+
                   if (full.val === 0)
-                    return `${label}: 💤 Alive, No Participation`;
+                    return `${label}: 💤 Alive (No Participation This Round)`;
+
                   return `${label}: ✅ Weight ${full.val.toFixed(2)}`;
                 },
               },
