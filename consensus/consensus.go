@@ -29,7 +29,9 @@ func NewConsensus(myAddress string, nodes []string) *Consensus {
 	serverState := NewServerState(myAddress)
 	priorityManager := &PriorityManager{}
 	priorityManager.Init(len(nodes), (len(nodes)/2)+1, 1, 0.01, true)
-	CabinetWeights = make(map[string]float64)
+	if CabinetWeights == nil {
+		CabinetWeights = make(map[string]float64)
+	}
 	cons := &Consensus{
 		State:         serverState,
 		prioMgr:       priorityManager,
@@ -332,6 +334,13 @@ func (c *Consensus) startElection() {
 				}
 			}(node)
 		}
+		// ✅ Auto-trigger dummy write to recalculate CabinetWeights
+		go func() {
+			time.Sleep(1 * time.Second) // optional small delay
+			fmt.Println("📊 Triggering dummy write to refresh CabinetWeights")
+			c.ProposeChange("put", "__cabinet_dummy__", fmt.Sprintf("refresh-%d", time.Now().UnixNano()))
+
+		}()
 	} else {
 		fmt.Println("🙅 This node did not win the election.")
 	}
