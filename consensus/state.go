@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"fmt"
+	"math"
 	"sync"
 	"time"
 )
@@ -74,4 +75,33 @@ func (s *ServerState) GetMyAddress() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.myAddress
+}
+
+var CabinetWeights map[string]float64
+var CabinetThreshold float64
+
+func InitCabinetWeights(peers []string) {
+	CabinetWeights = make(map[string]float64)
+	r := 1.5
+	a := 1.0
+	sum := 0.0
+
+	for i := 0; i < len(peers); i++ {
+		id := peers[i]
+		w := a * math.Pow(r, float64(len(peers)-1-i))
+		CabinetWeights[id] = w
+		sum += w
+	}
+
+	CabinetThreshold = sum / 2.0
+}
+
+func HasCabinetQuorum(acks map[string]bool) bool {
+	total := 0.0
+	for id, ack := range acks {
+		if ack {
+			total += CabinetWeights[id]
+		}
+	}
+	return total > CabinetThreshold
 }

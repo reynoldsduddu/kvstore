@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"kvstore/consensus"
 	"net/http"
 	"strconv"
 )
@@ -281,6 +282,21 @@ func (s *Server) ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
 }
+func (s *Server) StatusHandler(w http.ResponseWriter, r *http.Request) {
+	status := s.store.consensus.GetNodeStatus() // ✅ now using the struct-bound method
+	fmt.Printf("📤 Serving /api/status: %+v\n", status)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
+}
+
+func (s *Server) WeightsHandler(w http.ResponseWriter, r *http.Request) {
+	normalized := make(map[string]float64)
+	for fullAddr, weight := range consensus.CabinetWeights {
+		normalized[fullAddr] = weight
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(normalized)
+}
 
 // Start initializes the HTTP server.
 func (s *Server) Start(addr string) error {
@@ -296,6 +312,9 @@ func (s *Server) Start(addr string) error {
 	http.HandleFunc("/api/priority", s.PriorityHandler)
 	http.HandleFunc("/api/set-leader", s.SetLeaderHandler)
 	http.HandleFunc("/api/leader", s.LeaderHandler)
+	http.HandleFunc("/api/weights", s.WeightsHandler)
+	http.HandleFunc("/api/status", s.StatusHandler)
+
 	http.HandleFunc("/api/", s.ProxyHandler) // Catch-all fallback
 
 	return http.ListenAndServe(addr, nil)

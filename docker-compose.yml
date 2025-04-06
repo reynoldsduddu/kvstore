@@ -3,6 +3,7 @@ version: "3.8"
 services:
   node0:
     build: .
+    hostname: node0
     container_name: node0
     ports:
       - "8081:8081"
@@ -13,6 +14,7 @@ services:
 
   node1:
     build: .
+    hostname: node1
     container_name: node1
     ports:
       - "8082:8081"
@@ -22,6 +24,7 @@ services:
       - ./node1_data:/data
   node2:
     build: .
+    hostname: node2
     container_name: node2
     ports:
       - "8083:8081"
@@ -31,6 +34,7 @@ services:
       - ./node2_data:/data
   node3:
     build: .
+    hostname: node3
     container_name: node3
     ports:
       - "8084:8081"
@@ -40,6 +44,7 @@ services:
       - ./node3_data:/data
   node4:
     build: .
+    hostname: node4
     container_name: node4
     ports:
       - "8085:8081"

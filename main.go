@@ -28,6 +28,8 @@ func loadClusterConfig() ([]config.NodeConfig, int) {
 
 func main() {
 	cwd, _ := os.Getwd()
+	peers := []string{"8081", "8082", "8083", "8084", "8085"} // or loaded from config
+	consensus.InitCabinetWeights(peers)
 	fmt.Println("🔍 Current working directory:", cwd)
 	nodes, serverID := loadClusterConfig()
 	myNode := nodes[serverID]
@@ -39,7 +41,9 @@ func main() {
 	}
 	// Initialize consensus
 	consensusModule := consensus.NewConsensus(myNode.IP+":"+myNode.Port, nodeAddresses)
-
+	if consensusModule.State.IsLeader() {
+		go consensusModule.StartHeartbeatBroadcast() // ✅ manually start it at launch
+	}
 	// Initialize KV Store with consensus
 	store, err := kvstore.NewKVStore("/data/kvstore.db", consensusModule)
 	if err != nil {
