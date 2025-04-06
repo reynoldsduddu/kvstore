@@ -53,80 +53,141 @@ func NewConsensus(myAddress string, nodes []string) *Consensus {
 	return cons
 }
 
-// ProposeChange starts a consensus operation.
+// ProposeChange starts a Cabinet++ consensus operation initiated by any node.
 func (c *Consensus) ProposeChange(opType, key, value string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	fmt.Printf("🔍 Checking consensus for %s: key=%s, value=%s\n", opType, key, value)
-
 	fmt.Printf("ℹ️ Initiating proposal from: %s\n", c.State.GetMyAddress())
 
-	approvalWeight := c.prioMgr.GetLeaderWeight()
-	majority := c.prioMgr.GetMajority()
+	// 📦 Log CabinetWeights snapshot before proposal
+	fmt.Println("📦 CabinetWeights BEFORE proposal:")
+	for node, weight := range CabinetWeights {
+		fmt.Printf("🔸 %s → %.2f\n", node, weight)
+	}
 
 	type responderInfo struct {
 		node     string
 		duration time.Duration
 	}
+
+	proposer := c.State.GetMyAddress()
+	fullAddr := serverIDFromAddress(proposer) + ":" + portFromAddress(proposer)
+
+	c.aliveStatusMu.RLock()
+	isAlive := c.nodeAlive[fullAddr]
+	c.aliveStatusMu.RUnlock()
+
+	approvalWeight := 0.0
 	var responders []responderInfo
 
-	for _, node := range c.nodes {
-		if node == c.State.GetMyAddress() {
-			continue // Skip self
+	// ✅ Count proposer vote if alive
+	if isAlive {
+		if w, ok := CabinetWeights[fullAddr]; ok {
+			approvalWeight += w
+			responders = append(responders, responderInfo{node: fullAddr, duration: 0})
+			fmt.Printf("✅ Proposer %s is alive with weight %.2f\n", fullAddr, w)
+		} else {
+			fmt.Printf("⚠️ Proposer %s is alive but has no Cabinet weight entry\n", fullAddr)
 		}
-		fmt.Printf("🔎 Checking if approval is needed from: %s\n", node)
+	}
 
-		// Identify node index
-		nodeIndex := -1
-		for i, addr := range c.nodes {
-			if addr == node {
-				nodeIndex = i
-				break
-			}
-		}
-		if nodeIndex == -1 {
-			fmt.Printf("Node %s not found in node list\n", node)
+	// 📣 Ask other nodes for approval
+	for _, node := range c.nodes {
+		if node == proposer {
 			continue
 		}
 
-		sendTime := time.Now()
+		start := time.Now()
 		approved := c.requestApproval(node, opType, key, value)
-		duration := time.Since(sendTime)
+		elapsed := time.Since(start)
 
-		fmt.Printf("🔹 Approval from %s (index %d): %v\n", node, nodeIndex, approved)
+		id := serverIDFromAddress(node)
+		port := portFromAddress(node)
+		fullAddr := id + ":" + port
 
 		if approved {
-			approvalWeight += c.prioMgr.GetNodeWeight(serverID(nodeIndex))
-			responders = append(responders, responderInfo{node: node, duration: duration})
+			sid := c.getServerIDFromAddress(node)
+			if sid == -1 {
+				fmt.Printf("⚠️ Unknown node %s, skipping\n", node)
+				continue
+			}
+			w := c.prioMgr.GetNodeWeight(sid)
+			approvalWeight += w
+			fmt.Printf("✅ %s approved with weight %.2f\n", fullAddr, w)
+			responders = append(responders, responderInfo{node: fullAddr, duration: elapsed})
+		} else {
+			fmt.Printf("🔹 Approval from %s: false\n", node)
 		}
 
-		if approvalWeight > majority {
-			fmt.Println("Consensus REACHED. Committing change.")
+		fmt.Printf("🧮 Final approvalWeight = %.2f, required = %.2f\n", approvalWeight, c.prioMgr.GetMajority())
+
+		// ✅ If quorum met, commit change
+		if approvalWeight > CabinetThreshold {
+			fmt.Println("✅ Consensus REACHED. Committing change.")
 			c.commitChange(opType, key, value)
 
-			// Sort responders by speed
+			// ⚡ Sort responders by responsiveness (fastest first)
 			sort.Slice(responders, func(i, j int) bool {
 				return responders[i].duration < responders[j].duration
 			})
 
-			// Extract node IDs
+			// 🔄 Extract ordered responder list
 			var ordered []string
-
-			// ✅ Always include leader (self) first
-			ordered = append(ordered, c.State.GetMyAddress())
-
 			for _, r := range responders {
 				ordered = append(ordered, r.node)
 			}
 
-			c.UpdateCabinetWeights(ordered)
+			// 🔁 Update Cabinet Weights (skip for dummy writes)
+			if !isDummyKey(key) {
+				if !c.State.IsLeader() {
+					// 🧠 Sync nodeAlive map from leader
+					leader := c.State.GetLeader()
+					if leader != "" {
+						resp, err := c.httpClient.Get("http://" + leader + "/api/status")
+						if err == nil && resp.StatusCode == http.StatusOK {
+							var status map[string]bool
+							if err := json.NewDecoder(resp.Body).Decode(&status); err == nil {
+								c.aliveStatusMu.Lock()
+								for k, v := range status {
+									c.nodeAlive[k] = v
+								}
+								c.aliveStatusMu.Unlock()
+								fmt.Println("✅ Synced nodeAlive map from leader:", status)
+							}
+						} else {
+							fmt.Println("⚠️ Could not sync nodeAlive from leader:", err)
+						}
+					}
+				}
+				c.UpdateCabinetWeights(ordered)
+
+				// 📦 Log new weights
+				fmt.Println("📦 CabinetWeights AFTER update:")
+				for node, weight := range CabinetWeights {
+					fmt.Printf("🔸 %s → %.2f\n", node, weight)
+				}
+			}
 			return true
 		}
 	}
 
-	fmt.Println("Consensus NOT REACHED. Rejecting request.")
+	fmt.Println("❌ Consensus NOT REACHED. Rejecting request.")
 	return false
+}
+
+func isDummyKey(key string) bool {
+	return strings.HasPrefix(key, "__cabinet_dummy__")
+}
+
+func (c *Consensus) getServerIDFromAddress(addr string) serverID {
+	for i, node := range c.nodes {
+		if node == addr {
+			return serverID(i)
+		}
+	}
+	return -1 // invalid or not found
 }
 
 // requestApproval asks followers for approval.
@@ -425,34 +486,63 @@ func (c *Consensus) GetNodeWeight(addr string) float64 {
 	}
 	return 0
 }
-
 func (c *Consensus) UpdateCabinetWeights(responders []string) {
 	newWeights := make(map[string]float64)
+	totalWeight := 0.0
+
+	// 1. Determine alive nodes
+	c.aliveStatusMu.RLock()
+	aliveNodes := make([]string, 0)
+	for _, node := range c.nodes {
+		id := serverIDFromAddress(node)
+		port := portFromAddress(node)
+		fullAddr := id + ":" + port
+		if c.nodeAlive[fullAddr] {
+			aliveNodes = append(aliveNodes, fullAddr)
+		}
+	}
+	c.aliveStatusMu.RUnlock()
+
+	// 2. Assign descending weights to responders
 	r := 1.5
 	a := 1.0
-	sum := 0.0
 	n := len(responders)
-
-	for i, fullAddr := range responders {
-		c.aliveStatusMu.RLock()
-		alive := c.nodeAlive[fullAddr]
-		c.aliveStatusMu.RUnlock()
-
-		if !alive {
-			newWeights[fullAddr] = 0.0
-			continue
-		}
-
+	for i, addr := range responders {
 		w := a * math.Pow(r, float64(n-1-i))
-		newWeights[fullAddr] = w
-
-		sum += w
+		newWeights[addr] = w
+		totalWeight += w
 	}
 
-	CabinetWeights = newWeights
-	CabinetThreshold = sum / 2.0
+	// 3. Fallback: assign small weight to alive non-responders
+	baseWeight := 1.0
+	for _, addr := range aliveNodes {
+		if _, ok := newWeights[addr]; !ok {
+			newWeights[addr] = baseWeight
+			totalWeight += baseWeight
+		}
+	}
 
-	fmt.Println("🔁 Updated Cabinet Weights:")
+	// 4. Normalize weights
+	for addr, weight := range newWeights {
+		newWeights[addr] = weight / totalWeight
+	}
+
+	// Update global weights
+	CabinetWeights = newWeights
+
+	// Compute threshold as 51% of total weight of ALIVE nodes
+	aliveWeight := 0.0
+	const quorumRatio = 0.51
+	for _, addr := range aliveNodes {
+		if w, ok := newWeights[addr]; ok {
+			aliveWeight += w
+		}
+	}
+	fmt.Printf("📊 Total alive weight before thresholding: %.2f\n", aliveWeight)
+
+	CabinetThreshold = quorumRatio * aliveWeight
+
+	fmt.Println("🔁 Updated Cabinet Weights (Normalized):")
 	for node, weight := range CabinetWeights {
 		fmt.Printf("🔸 %s → %.2f\n", node, weight)
 	}
@@ -471,6 +561,14 @@ func (c *Consensus) GetNodeStatus() map[string]bool {
 		statusCopy[k] = v
 	}
 	return statusCopy
+}
+func (c *Consensus) GetCabinetWeights() map[string]float64 {
+	// Defensive copy to avoid exposing internal map
+	result := make(map[string]float64)
+	for k, v := range CabinetWeights {
+		result[k] = v
+	}
+	return result
 }
 
 func (c *Consensus) GetAllNodes() []string {

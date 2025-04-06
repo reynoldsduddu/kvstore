@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"kvstore/consensus"
 	"net/http"
 	"strconv"
 )
@@ -306,7 +305,6 @@ func (s *Server) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
 }
-
 func (s *Server) WeightsHandler(w http.ResponseWriter, r *http.Request) {
 	if !s.store.consensus.State.IsLeader() {
 		leader := s.store.consensus.State.GetLeader()
@@ -325,9 +323,10 @@ func (s *Server) WeightsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ✅ FULL FIX: Return weights keyed by full address
+	// ✅ Return the weights from the Consensus instance
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(consensus.CabinetWeights)
+	weights := s.store.consensus.GetCabinetWeights()
+	json.NewEncoder(w).Encode(weights)
 }
 
 // Start initializes the HTTP server.

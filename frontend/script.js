@@ -149,27 +149,31 @@ async function fetchAndRenderWeights() {
     const rawData = Object.values(weights);
 
     // Filter out nodes that are not alive
-    const filtered = Object.entries(weights)
-      .filter(([fullAddr]) => nodeStatus[fullAddr]) // keep only alive nodes
-      .map(([fullAddr, weight]) => ({
-        label: fullAddr.split(":")[1], // show just the port (or customize as needed)
+    const filtered = Object.entries(nodeStatus).map(([fullAddr, isAlive]) => {
+      const weight = weights[fullAddr] ?? 0; // default to 0 if missing
+      return {
+        label: fullAddr,
         val: weight,
+        isAlive: isAlive,
         fullKey: fullAddr,
-      }));
+      };
+    });
 
     const labels = filtered.map((d) => d.label);
-    const data = filtered.map((d) => d.val);
+    const data = filtered.map((d) => (d.val === 0 ? 0.05 : d.val));
     const sorted = [...data].sort((a, b) => b - a);
 
     // Color based on rank
-    const getColor = (val) => {
-      const rank = sorted.indexOf(val);
+    const getColor = (val, isAlive) => {
+      if (!isAlive) return "red"; // 🔴 dead node
+      if (val === 0) return "lightgray"; // 🩶 alive but didn't participate
+      const rank = sorted.indexOf(val); // 🟡 normal ranking
       if (rank === 0) return "green";
-      if (rank === sorted.length - 1) return "red";
+      if (rank === sorted.length - 1) return "gold";
       return "gold";
     };
 
-    const backgroundColors = filtered.map((d) => getColor(d.val));
+    const backgroundColors = filtered.map((d) => getColor(d.val, d.isAlive));
     const borderColors = [...backgroundColors];
 
     const labeled = labels.map((label) =>
@@ -186,7 +190,7 @@ async function fetchAndRenderWeights() {
           datasets: [
             {
               label: "Cabinet Weights + Health",
-              data: data,
+              data: data.map((val) => (val === 0 ? 0.05 : val)), // hack to show 0 bars
               backgroundColor: backgroundColors,
               borderColor: borderColors,
               borderWidth: 1,
@@ -195,6 +199,27 @@ async function fetchAndRenderWeights() {
         },
         options: {
           animation: false,
+          responsive: true,
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: function (context) {
+                  const index = context.dataIndex;
+                  const label = context.chart.data.labels[index];
+                  const weight = context.dataset.data[index];
+                  const full = filtered[index];
+
+                  if (!full.isAlive) return `${label}: ❌ DEAD NODE`;
+                  if (full.val === 0)
+                    return `${label}: 💤 Alive, No Participation`;
+                  return `${label}: ✅ Weight ${full.val.toFixed(2)}`;
+                },
+              },
+            },
+            legend: {
+              display: false,
+            },
+          },
           scales: {
             y: {
               beginAtZero: true,
@@ -204,7 +229,7 @@ async function fetchAndRenderWeights() {
       });
     } else {
       chart.data.labels = labeled;
-      chart.data.datasets[0].data = data;
+      chart.data.datasets[0].data = data.map((val) => (val === 0 ? 0.05 : val));
       chart.data.datasets[0].backgroundColor = backgroundColors;
       chart.data.datasets[0].borderColor = borderColors;
       chart.update();

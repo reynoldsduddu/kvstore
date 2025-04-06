@@ -62,7 +62,51 @@
       <hr />
       <p id="leader-status" class="text-center text-muted"></p>
       <h2>Cabinet Weights</h2>
+      <!-- Legend -->
+      <div id="weightLegend" style="margin-top: 10px; text-align: center">
+        <span
+          style="
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background-color: green;
+            margin-right: 5px;
+          "
+        ></span>
+        Fastest Node &nbsp;&nbsp;
+        <span
+          style="
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background-color: gold;
+            margin-right: 5px;
+          "
+        ></span>
+        Participating Nodes &nbsp;&nbsp;
+        <span
+          style="
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background-color: lightgray;
+            margin-right: 5px;
+          "
+        ></span>
+        Alive (No Vote) &nbsp;&nbsp;
+        <span
+          style="
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background-color: red;
+            margin-right: 5px;
+          "
+        ></span>
+        Dead Node
+      </div>
       <canvas id="weightChart" width="600" height="300"></canvas>
+
       <h3>Node Health Status</h3>
       <table id="statusTable" border="1" cellpadding="6">
         <thead>
