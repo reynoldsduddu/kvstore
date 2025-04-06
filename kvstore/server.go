@@ -325,13 +325,9 @@ func (s *Server) WeightsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Serve locally if leader
-	normalized := make(map[string]float64)
-	for fullAddr, weight := range consensus.CabinetWeights {
-		normalized[fullAddr] = weight
-	}
+	// ✅ FULL FIX: Return weights keyed by full address
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(normalized)
+	json.NewEncoder(w).Encode(consensus.CabinetWeights)
 }
 
 // Start initializes the HTTP server.

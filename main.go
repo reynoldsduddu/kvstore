@@ -28,8 +28,8 @@ func loadClusterConfig() ([]config.NodeConfig, int) {
 
 func main() {
 	cwd, _ := os.Getwd()
-	peers := []string{"8081", "8082", "8083", "8084", "8085"} // or loaded from config
-	consensus.InitCabinetWeights(peers)
+	//peers := []string{"8081", "8082", "8083", "8084", "8085"} // or loaded from config
+	//consensus.InitCabinetWeights(peers)
 	fmt.Println("🔍 Current working directory:", cwd)
 	nodes, serverID := loadClusterConfig()
 	myNode := nodes[serverID]

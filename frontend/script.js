@@ -149,17 +149,13 @@ async function fetchAndRenderWeights() {
     const rawData = Object.values(weights);
 
     // Filter out nodes that are not alive
-    const filtered = rawLabels.map((label, idx) => {
-      // Cabinet assumes node index 0 = 8081, 1 = 8082, etc.
-      const nodeIndex = idx;
-      const expectedLabel = `node${nodeIndex}:8081`; // based on known structure
-
-      return {
-        label,
-        val: rawData[idx],
-        fullKey: expectedLabel,
-      };
-    });
+    const filtered = Object.entries(weights)
+      .filter(([fullAddr]) => nodeStatus[fullAddr]) // keep only alive nodes
+      .map(([fullAddr, weight]) => ({
+        label: fullAddr.split(":")[1], // show just the port (or customize as needed)
+        val: weight,
+        fullKey: fullAddr,
+      }));
 
     const labels = filtered.map((d) => d.label);
     const data = filtered.map((d) => d.val);

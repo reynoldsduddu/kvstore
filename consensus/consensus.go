@@ -29,7 +29,7 @@ func NewConsensus(myAddress string, nodes []string) *Consensus {
 	serverState := NewServerState(myAddress)
 	priorityManager := &PriorityManager{}
 	priorityManager.Init(len(nodes), (len(nodes)/2)+1, 1, 0.01, true)
-
+	CabinetWeights = make(map[string]float64)
 	cons := &Consensus{
 		State:         serverState,
 		prioMgr:       priorityManager,
@@ -45,6 +45,7 @@ func NewConsensus(myAddress string, nodes []string) *Consensus {
 	// Start heartbeat monitor only if follower
 	if !cons.State.IsLeader() {
 		go cons.monitorHeartbeat()
+
 	}
 
 	return cons
