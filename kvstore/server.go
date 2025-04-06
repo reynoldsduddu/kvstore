@@ -283,13 +283,49 @@ func (s *Server) ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, resp.Body)
 }
 func (s *Server) StatusHandler(w http.ResponseWriter, r *http.Request) {
-	status := s.store.consensus.GetNodeStatus() // ✅ now using the struct-bound method
+	if !s.store.consensus.State.IsLeader() {
+		leader := s.store.consensus.State.GetLeader()
+		if leader == "" {
+			http.Error(w, "No leader available", http.StatusServiceUnavailable)
+			return
+		}
+		resp, err := http.Get("http://" + leader + "/api/status")
+		if err != nil {
+			http.Error(w, "Failed to proxy status to leader", http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		w.Header().Set("Content-Type", "application/json")
+		io.Copy(w, resp.Body)
+		return
+	}
+
+	// Serve locally if leader
+	status := s.store.consensus.GetNodeStatus()
 	fmt.Printf("📤 Serving /api/status: %+v\n", status)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
 }
 
 func (s *Server) WeightsHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.store.consensus.State.IsLeader() {
+		leader := s.store.consensus.State.GetLeader()
+		if leader == "" {
+			http.Error(w, "No leader available", http.StatusServiceUnavailable)
+			return
+		}
+		resp, err := http.Get("http://" + leader + "/api/weights")
+		if err != nil {
+			http.Error(w, "Failed to proxy weights to leader", http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		w.Header().Set("Content-Type", "application/json")
+		io.Copy(w, resp.Body)
+		return
+	}
+
+	// Serve locally if leader
 	normalized := make(map[string]float64)
 	for fullAddr, weight := range consensus.CabinetWeights {
 		normalized[fullAddr] = weight
