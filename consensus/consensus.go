@@ -111,13 +111,22 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 			continue
 		}
 
-		start := time.Now()
-		approved := c.requestApproval(node, opType, key, value)
-		elapsed := time.Since(start)
-
 		id := serverIDFromAddress(node)
 		port := portFromAddress(node)
 		fullAddr := id + ":" + port
+
+		c.aliveStatusMu.RLock()
+		alive := c.nodeAlive[fullAddr]
+		c.aliveStatusMu.RUnlock()
+
+		if !alive {
+			fmt.Printf("⚠️ Skipping approval request to dead node %s\n", fullAddr)
+			continue
+		}
+
+		start := time.Now()
+		approved := c.requestApproval(node, opType, key, value)
+		elapsed := time.Since(start)
 
 		if approved {
 			sid := c.getServerIDFromAddress(node)
@@ -205,6 +214,19 @@ func (c *Consensus) getServerIDFromAddress(addr string) serverID {
 
 // requestApproval asks followers for approval.
 func (c *Consensus) requestApproval(node, opType, key, value string) bool {
+	id := serverIDFromAddress(node)
+	port := portFromAddress(node)
+	fullAddr := id + ":" + port
+
+	// ✅ Skip if node is not alive
+	c.aliveStatusMu.RLock()
+	alive := c.nodeAlive[fullAddr]
+	c.aliveStatusMu.RUnlock()
+	if !alive {
+		fmt.Printf("⚠️ Skipping approval request to dead node %s\n", fullAddr)
+		return false
+	}
+
 	reqBody, _ := json.Marshal(map[string]string{
 		"opType": opType,
 		"key":    key,
@@ -234,10 +256,22 @@ func (c *Consensus) requestApproval(node, opType, key, value string) bool {
 func (c *Consensus) commitChange(opType, key, value string) {
 	fmt.Printf("Consensus reached: %s %s = %s\n", opType, key, value)
 
-	// Replicate to all followers
 	for _, node := range c.nodes {
 		if node == c.State.GetMyAddress() {
-			continue // skip self
+			continue
+		}
+
+		id := serverIDFromAddress(node)
+		port := portFromAddress(node)
+		fullAddr := id + ":" + port
+
+		// ✅ Skip if node is not alive
+		c.aliveStatusMu.RLock()
+		alive := c.nodeAlive[fullAddr]
+		c.aliveStatusMu.RUnlock()
+		if !alive {
+			fmt.Printf("⚠️ Skipping replication to dead node %s\n", fullAddr)
+			continue
 		}
 
 		go func(target string) {

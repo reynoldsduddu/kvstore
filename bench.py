@@ -6,6 +6,23 @@ import time
 import argparse
 import threading
 from statistics import mean, median, quantiles
+import subprocess
+import datetime
+recovery_lock = threading.Lock()
+recovery_start = None
+recovery_logged = False
+last_leader = None
+recovery_start = None
+recovery_end = None
+
+
+def kill_leader_delayed(leader_container, delay=5):
+    def _delayed_kill():
+        print(f"🕒 Waiting {delay}s before killing leader...")
+        time.sleep(delay)
+        print(f"💥 Stopping leader container: {leader_container}")
+        subprocess.call(["docker", "stop", leader_container])
+    threading.Thread(target=_delayed_kill, daemon=True).start()
 
 def random_key(length=8):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
@@ -38,6 +55,8 @@ def send_put(url, key, value):
         return False, None
 
 def worker(thread_id, num_ops, target_mode, base_urls, result_list):
+    global recovery_start, recovery_logged
+    initial_leader = get_leader(base_urls)
     local_latencies = []
     successes = 0
 
@@ -46,9 +65,34 @@ def worker(thread_id, num_ops, target_mode, base_urls, result_list):
         val = random_value()
 
         if target_mode == "leader":
-            leader = get_leader(base_urls)
+            attempts = 0
+            leader = None
+            while attempts < 10:
+                current_leader = get_leader(base_urls)
+                #print(f"[Thread-{thread_id}] Attempt {attempts+1} → Leader: {current_leader}")
+                if current_leader:
+                    # Detect change in leader (true recovery)
+                    with recovery_lock:
+                        if initial_leader and current_leader != initial_leader and not recovery_logged:
+                            recovery_end = datetime.datetime.now()
+                            duration = (recovery_end - recovery_start).total_seconds()
+                            print(f"✅ Leader changed from {initial_leader} to {current_leader} at {recovery_end.time()} — recovery time: {duration:.2f}s")
+                            recovery_logged = True
+
+                    # Set lost time if not already
+                    with recovery_lock:
+                        if not recovery_start:
+                            recovery_start = datetime.datetime.now()
+                            print(f"⚠️ Leader lost at {recovery_start.time()}")
+
+                    leader = current_leader
+                    break
+                else:
+                    time.sleep(1)
+                    attempts += 1
+
             if not leader:
-                print("[WARN] Leader not found. Skipping.")
+                print(f"[Thread-{thread_id}] Leader not found. Skipping.")
                 continue
             target = leader
         else:
@@ -58,10 +102,11 @@ def worker(thread_id, num_ops, target_mode, base_urls, result_list):
         if ok:
             successes += 1
             local_latencies.append(latency)
-    
     result_list.append((successes, local_latencies))
 
 def main():
+    # Auto-kill the leader after 5 seconds
+    #kill_leader_delayed("node0", delay=5)
     parser = argparse.ArgumentParser(description="Cabinet/Cabinet++ Benchmarking Tool")
     parser.add_argument("--mode", choices=["cabinet", "cabinet++"], required=True, help="Test mode")
     parser.add_argument("--concurrency", type=int, default=1, help="Number of concurrent clients")

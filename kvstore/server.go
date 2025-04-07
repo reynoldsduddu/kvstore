@@ -110,16 +110,27 @@ func (s *Server) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) ApproveHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("📥 Received approval request...")
 
-	// Check if this node is a follower
+	// ✅ Sanity check: only followers approve
 	if s.store.consensus.State.IsLeader() {
-		fmt.Println("This node is a leader and cannot approve its own requests.")
+		fmt.Println("❌ This node is a leader and cannot approve its own requests.")
 		http.Error(w, "Leaders cannot approve their own requests", http.StatusForbidden)
 		return
 	}
 
-	// Simulate approval (followers always approve)
+	// 🛡️ Optional: decode and log approval payload for debugging
+	var req map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+		fmt.Println("❌ Malformed approval request.")
+		return
+	}
+	key := req["key"]
+	value := req["value"]
+	opType := req["opType"]
+	fmt.Printf("✅ Approval granted: %s %s = %s\n", opType, key, value)
+
+	// 🟢 Always approve for now (could add failure simulation later)
 	w.WriteHeader(http.StatusOK)
-	fmt.Println("Approval granted by follower.")
 }
 
 type PaginatedResponse struct {
