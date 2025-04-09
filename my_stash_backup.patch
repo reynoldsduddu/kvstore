@@ -1,0 +1,15 @@
+diff --git a/node0_data/kvstore.db b/node0_data/kvstore.db
+index 4bdb497..1cd6c30 100644
+Binary files a/node0_data/kvstore.db and b/node0_data/kvstore.db differ
+diff --git a/node1_data/kvstore.db b/node1_data/kvstore.db
+index 6337015..66c174a 100644
+Binary files a/node1_data/kvstore.db and b/node1_data/kvstore.db differ
+diff --git a/node2_data/kvstore.db b/node2_data/kvstore.db
+index f541069..fa7b65a 100644
+Binary files a/node2_data/kvstore.db and b/node2_data/kvstore.db differ
+diff --git a/node3_data/kvstore.db b/node3_data/kvstore.db
+index efc75ed..23997c2 100644
+Binary files a/node3_data/kvstore.db and b/node3_data/kvstore.db differ
+diff --git a/node4_data/kvstore.db b/node4_data/kvstore.db
+index cb6bf61..6d79ea9 100644
+Binary files a/node4_data/kvstore.db and b/node4_data/kvstore.db differ

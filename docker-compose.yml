@@ -9,7 +9,7 @@ services:
       - "8081:8081"
     environment:
       - SERVER_ID=0
-      - CONSENSUS_MODE=cabinet++
+      - CONSENSUS_MODE=cabinet
     volumes:
       - ./node0_data:/data
 
@@ -21,7 +21,7 @@ services:
       - "8082:8081"
     environment:
       - SERVER_ID=1
-      - CONSENSUS_MODE=cabinet++
+      - CONSENSUS_MODE=cabinet
     volumes:
       - ./node1_data:/data
   node2:
@@ -32,7 +32,7 @@ services:
       - "8083:8081"
     environment:
       - SERVER_ID=2
-      - CONSENSUS_MODE=cabinet++
+      - CONSENSUS_MODE=cabinet
     volumes:
       - ./node2_data:/data
   node3:
@@ -43,7 +43,7 @@ services:
       - "8084:8081"
     environment:
       - SERVER_ID=3
-      - CONSENSUS_MODE=cabinet++
+      - CONSENSUS_MODE=cabinet
     volumes:
       - ./node3_data:/data
   node4:
@@ -54,6 +54,6 @@ services:
       - "8085:8081"
     environment:
       - SERVER_ID=4
-      - CONSENSUS_MODE=cabinet++
+      - CONSENSUS_MODE=cabinet
     volumes:
       - ./node4_data:/data

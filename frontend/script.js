@@ -121,7 +121,7 @@ document.getElementById("next-page-button").addEventListener("click", () => {
 });
 
 //Visualization for Weights and node liveness
-setInterval(fetchAndRenderWeights, 4000);
+setInterval(fetchAndRenderWeights, 1000);
 
 let chart;
 
@@ -207,27 +207,15 @@ async function fetchAndRenderWeights() {
                 label: function (context) {
                   const index = context.dataIndex;
                   const label = context.chart.data.labels[index];
-                  const weight = context.dataset.data[index];
                   const full = filtered[index];
+                  const weight = full.val;
 
                   if (!full.isAlive) return `${label}: ❌ DEAD NODE`;
 
-                  const aliveWeights = filtered
-                    .filter((d) => d.isAlive)
-                    .map((d) => d.val);
+                  if (weight === 0)
+                    return `${label}: 💤 Alive (No Participation This Round)\nWeight: 0.00`;
 
-                  const allEqual =
-                    aliveWeights.length > 0 &&
-                    aliveWeights.every(
-                      (w) => Math.abs(w - aliveWeights[0]) < 0.001
-                    );
-
-                  if (allEqual) return `${label}: ✅ (Equal Weights Assigned)`;
-
-                  if (full.val === 0)
-                    return `${label}: 💤 Alive (No Participation This Round)`;
-
-                  return `${label}: ✅ Weight ${full.val.toFixed(2)}`;
+                  return `${label}: ✅ Weight ${weight.toFixed(2)}`;
                 },
               },
             },
@@ -272,8 +260,25 @@ async function fetchAndRenderWeights() {
   }
 }
 
+async function updateModeStatus() {
+  try {
+    const res = await fetch("/api/mode");
+    const data = await res.json();
+    const mode =
+      data.mode === "cabinet"
+        ? "🧱 Cabinet Mode Active"
+        : "🧠 Cabinet++ Mode Active";
+    document.getElementById("mode-status").textContent = mode;
+  } catch (err) {
+    console.error("Failed to fetch mode:", err);
+    document.getElementById("mode-status").textContent = "⚠️ Mode Unknown";
+  }
+}
+
 window.onload = () => {
   updateLeaderStatus();
+  updateModeStatus();
   fetchKeyValuePairs(currentPage);
+
   fetchAndRenderWeights();
 };

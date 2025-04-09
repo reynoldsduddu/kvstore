@@ -55,7 +55,7 @@ func NewConsensus(myAddress string, nodes []string, mode string) *Consensus {
 	return cons
 }
 
-// ProposeChange starts a Cabinet++ consensus operation initiated by any node.
+// ProposeChange handles consensus for both Cabinet and Cabinet++ modes.
 func (c *Consensus) ProposeChange(opType, key, value string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -63,27 +63,11 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 	fmt.Printf("🔍 Checking consensus for %s: key=%s, value=%s\n", opType, key, value)
 	fmt.Printf("ℹ️ Initiating proposal from: %s\n", c.State.GetMyAddress())
 
-	// 📦 Log CabinetWeights snapshot before proposal
-	fmt.Println("📦 CabinetWeights BEFORE proposal:")
-	for node, weight := range CabinetWeights {
-		fmt.Printf("🔸 %s → %.2f\n", node, weight)
-	}
-
 	type responderInfo struct {
 		node     string
 		duration time.Duration
 	}
-	if c.Mode == "cabinet" {
-		// Cabinet: only leader proposes, skip approval requests
-		if !c.State.IsLeader() {
-			fmt.Println("❌ Non-leader tried to propose in Cabinet mode")
-			return false
-		}
 
-		fmt.Println("📥 Cabinet mode: leader directly committing change")
-		c.commitChange(opType, key, value)
-		return true
-	}
 	proposer := c.State.GetMyAddress()
 	fullAddr := serverIDFromAddress(proposer) + ":" + portFromAddress(proposer)
 
@@ -93,6 +77,12 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 
 	approvalWeight := 0.0
 	var responders []responderInfo
+
+	// ✅ Leader-only for Cabinet mode
+	if c.Mode == "cabinet" && !c.State.IsLeader() {
+		fmt.Println("❌ Non-leader tried to propose in Cabinet mode")
+		return false
+	}
 
 	// ✅ Count proposer vote if alive
 	if isAlive {
@@ -132,44 +122,46 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 		} else {
 			fmt.Printf("🔹 Approval from %s: false\n", node)
 		}
+	}
+	fmt.Println("📦 CabinetWeights at time of proposal:")
+	for node, weight := range CabinetWeights {
+		fmt.Printf("🔸 %s → %.2f\n", node, weight)
+	}
+	fmt.Printf("🧮 Final approvalWeight = %.2f, required = %.2f\n", approvalWeight, CabinetThreshold)
 
-		fmt.Printf("🧮 Final approvalWeight = %.2f, required = %.2f\n", approvalWeight, c.prioMgr.GetMajority())
+	// ✅ If quorum met, commit change
+	if approvalWeight >= CabinetThreshold {
+		fmt.Println("✅ Consensus REACHED. Committing change.")
+		c.commitChange(opType, key, value)
 
-		// ✅ If quorum met, commit change
-		if approvalWeight > CabinetThreshold {
-			fmt.Println("✅ Consensus REACHED. Committing change.")
-			c.commitChange(opType, key, value)
+		// ⚡ Sort responders by responsiveness (fastest first)
+		sort.Slice(responders, func(i, j int) bool {
+			return responders[i].duration < responders[j].duration
+		})
 
-			// ⚡ Sort responders by responsiveness (fastest first)
-			sort.Slice(responders, func(i, j int) bool {
-				return responders[i].duration < responders[j].duration
-			})
-
-			// 🔄 Extract ordered responder list
-			var ordered []string
-			for _, r := range responders {
-				ordered = append(ordered, r.node)
-			}
-
-			// 🔁 Update Cabinet Weights (skip for dummy writes)
-			if !isDummyKey(key) {
-				if !c.State.IsLeader() {
-					leader := c.State.GetLeader()
-					if leader != "" {
-						body := bytes.NewBuffer([]byte(fmt.Sprintf(`{"sender": "%s"}`, c.State.GetMyAddress())))
-						http.Post("http://"+leader+"/api/notify-consensus", "application/json", body)
-					}
-				}
-				c.UpdateCabinetWeights(ordered)
-
-				// 📦 Log new weights
-				fmt.Println("📦 CabinetWeights AFTER update:")
-				for node, weight := range CabinetWeights {
-					fmt.Printf("🔸 %s → %.2f\n", node, weight)
-				}
-			}
-			return true
+		var ordered []string
+		for _, r := range responders {
+			ordered = append(ordered, r.node)
 		}
+
+		// 🔁 Update Cabinet Weights in both modes (Cabinet & Cabinet++)
+		if !isDummyKey(key) {
+			if c.Mode == "cabinet++" && !c.State.IsLeader() {
+				leader := c.State.GetLeader()
+				if leader != "" {
+					body := bytes.NewBuffer([]byte(fmt.Sprintf(`{"sender": "%s"}`, c.State.GetMyAddress())))
+					http.Post("http://"+leader+"/api/notify-consensus", "application/json", body)
+				}
+			}
+			c.UpdateCabinetWeights(ordered)
+
+			// 📦 Log new weights
+			fmt.Println("📦 CabinetWeights AFTER update:")
+			for node, weight := range CabinetWeights {
+				fmt.Printf("🔸 %s → %.2f\n", node, weight)
+			}
+		}
+		return true
 	}
 
 	fmt.Println("❌ Consensus NOT REACHED. Rejecting request.")

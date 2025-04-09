@@ -1,6 +1,7 @@
 package kvstore
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -48,9 +49,29 @@ func (s *Server) PutHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if s.store.consensus.Mode == "cabinet" {
 		if !s.store.consensus.State.IsLeader() {
-			http.Error(w, "Cabinet mode: only leader can propose", http.StatusForbidden)
+			leader := s.store.consensus.State.GetLeader()
+			if leader == "" {
+				http.Error(w, "Leader unknown", http.StatusServiceUnavailable)
+				return
+			}
+
+			// 🔁 Forward to leader
+			fmt.Printf("🔀 Forwarding PUT to leader %s\n", leader)
+			proxyURL := fmt.Sprintf("http://%s/api/put", leader)
+			reqBody, _ := json.Marshal(req)
+			resp, err := http.Post(proxyURL, "application/json", bytes.NewReader(reqBody))
+			if err != nil {
+				fmt.Printf("❌ Forwarding failed: %v\n", err)
+				http.Error(w, "Failed to forward to leader", http.StatusBadGateway)
+				return
+			}
+			defer resp.Body.Close()
+			w.WriteHeader(resp.StatusCode)
+			io.Copy(w, resp.Body)
 			return
 		}
+
+		// ✅ This node is the leader — handle normally
 		err = s.store.Put(req.Key, req.Value)
 	} else if s.store.consensus.Mode == "cabinet++" {
 		err = s.store.Put(req.Key, req.Value)
@@ -360,6 +381,10 @@ func (s *Server) NotifyConsensusHandler(w http.ResponseWriter, r *http.Request) 
 	s.store.consensus.UpdateCabinetWeights(s.store.consensus.GetPeers())
 	w.WriteHeader(http.StatusOK)
 }
+func (s *Server) ModeHandler(w http.ResponseWriter, r *http.Request) {
+	mode := s.store.consensus.Mode
+	json.NewEncoder(w).Encode(map[string]string{"mode": mode})
+}
 
 // Start initializes the HTTP server.
 func (s *Server) Start(addr string) error {
@@ -378,6 +403,7 @@ func (s *Server) Start(addr string) error {
 	http.HandleFunc("/api/weights", s.WeightsHandler)
 	http.HandleFunc("/api/status", s.StatusHandler)
 	http.HandleFunc("/api/notify-consensus", s.NotifyConsensusHandler)
+	http.HandleFunc("/api/mode", s.ModeHandler)
 
 	http.HandleFunc("/api/", s.ProxyHandler) // Catch-all fallback
 
