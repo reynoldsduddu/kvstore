@@ -77,6 +77,8 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 
 	approvalWeight := 0.0
 	var responders []responderInfo
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 
 	// ✅ Leader-only for Cabinet mode
 	if c.Mode == "cabinet" && !c.State.IsLeader() {
@@ -95,49 +97,54 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 		}
 	}
 
-	// 📣 Ask other nodes for approval
+	// 📣 Parallelized approval requests
 	for _, node := range c.nodes {
 		if node == proposer {
 			continue
 		}
-		id := serverIDFromAddress(node)
-		port := portFromAddress(node)
-		fullAddr := id + ":" + port
 
-		c.aliveStatusMu.RLock()
-		if !c.nodeAlive[fullAddr] {
-			fmt.Printf("⚠️ Skipping dead node %s during proposal\n", fullAddr)
-			c.aliveStatusMu.RUnlock()
-			continue
-		}
-		c.aliveStatusMu.RUnlock()
+		wg.Add(1)
+		go func(node string) {
+			defer wg.Done()
 
-		start := time.Now()
-		approved := c.requestApproval(node, opType, key, value)
-		elapsed := time.Since(start)
+			id := serverIDFromAddress(node)
+			port := portFromAddress(node)
+			fullAddr := id + ":" + port
 
-		// start := time.Now()
-		// approved := c.requestApproval(node, opType, key, value)
-		// elapsed := time.Since(start)
-
-		// id := serverIDFromAddress(node)
-		// port := portFromAddress(node)
-		// fullAddr := id + ":" + port
-
-		if approved {
-			sid := c.getServerIDFromAddress(node)
-			if sid == -1 {
-				fmt.Printf("⚠️ Unknown node %s, skipping\n", node)
-				continue
+			c.aliveStatusMu.RLock()
+			if !c.nodeAlive[fullAddr] {
+				fmt.Printf("⚠️ Skipping dead node %s during proposal\n", fullAddr)
+				c.aliveStatusMu.RUnlock()
+				return
 			}
-			w := c.prioMgr.GetNodeWeight(sid)
-			approvalWeight += w
-			fmt.Printf("✅ %s approved with weight %.2f\n", fullAddr, w)
-			responders = append(responders, responderInfo{node: fullAddr, duration: elapsed})
-		} else {
-			fmt.Printf("🔹 Approval from %s: false\n", node)
-		}
+			c.aliveStatusMu.RUnlock()
+
+			start := time.Now()
+			approved := c.requestApproval(node, opType, key, value)
+			elapsed := time.Since(start)
+
+			if approved {
+				sid := c.getServerIDFromAddress(node)
+				if sid == -1 {
+					fmt.Printf("⚠️ Unknown node %s, skipping\n", node)
+					return
+				}
+				w := c.prioMgr.GetNodeWeight(sid)
+
+				mu.Lock()
+				approvalWeight += w
+				responders = append(responders, responderInfo{node: fullAddr, duration: elapsed})
+				mu.Unlock()
+
+				fmt.Printf("✅ %s approved with weight %.2f\n", fullAddr, w)
+			} else {
+				fmt.Printf("🔹 Approval from %s: false\n", node)
+			}
+		}(node)
 	}
+
+	wg.Wait()
+
 	fmt.Println("📦 CabinetWeights at time of proposal:")
 	for node, weight := range CabinetWeights {
 		fmt.Printf("🔸 %s → %.2f\n", node, weight)
@@ -203,6 +210,7 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 	fmt.Println("❌ Consensus NOT REACHED. Rejecting request.")
 	return false
 }
+
 func (c *Consensus) SyncNodeAliveAndWeightsFromLeader(leader string) {
 	resp, err := c.httpClient.Get("http://" + leader + "/api/status")
 	if err == nil && resp.StatusCode == http.StatusOK {
