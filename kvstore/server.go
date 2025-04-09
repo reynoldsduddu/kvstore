@@ -269,9 +269,15 @@ func (s *Server) SetLeaderHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	leader, ok := payload["leader"]
-	if ok {
+	if ok && leader != "" {
 		s.store.consensus.State.SetLeader(leader)
 		fmt.Printf("🔄 Leader updated to: %s\n", leader)
+		// if isAlive {
+		// 	s.store.consensus.State.SetLeader(leader)
+		// 	fmt.Printf("🔄 Leader updated to: %s\n", leader)
+		// } else {
+		// 	fmt.Printf("⚠️ Rejected set-leader: %s is not alive\n", leader)
+		// }
 	}
 	w.WriteHeader(http.StatusOK)
 }

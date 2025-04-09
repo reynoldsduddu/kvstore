@@ -38,7 +38,7 @@ func NewConsensus(myAddress string, nodes []string, mode string) *Consensus {
 		State:         serverState,
 		prioMgr:       priorityManager,
 		nodes:         nodes,
-		httpClient:    &http.Client{Timeout: 3 * time.Second},
+		httpClient:    &http.Client{Timeout: 1 * time.Second},
 		nodeAlive:     make(map[string]bool),
 		failureCount:  make(map[string]int),
 		aliveStatusMu: sync.RWMutex{},
@@ -100,14 +100,29 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 		if node == proposer {
 			continue
 		}
+		id := serverIDFromAddress(node)
+		port := portFromAddress(node)
+		fullAddr := id + ":" + port
+
+		c.aliveStatusMu.RLock()
+		if !c.nodeAlive[fullAddr] {
+			fmt.Printf("⚠️ Skipping dead node %s during proposal\n", fullAddr)
+			c.aliveStatusMu.RUnlock()
+			continue
+		}
+		c.aliveStatusMu.RUnlock()
 
 		start := time.Now()
 		approved := c.requestApproval(node, opType, key, value)
 		elapsed := time.Since(start)
 
-		id := serverIDFromAddress(node)
-		port := portFromAddress(node)
-		fullAddr := id + ":" + port
+		// start := time.Now()
+		// approved := c.requestApproval(node, opType, key, value)
+		// elapsed := time.Since(start)
+
+		// id := serverIDFromAddress(node)
+		// port := portFromAddress(node)
+		// fullAddr := id + ":" + port
 
 		if approved {
 			sid := c.getServerIDFromAddress(node)
@@ -149,8 +164,29 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 			if c.Mode == "cabinet++" && !c.State.IsLeader() {
 				leader := c.State.GetLeader()
 				if leader != "" {
-					body := bytes.NewBuffer([]byte(fmt.Sprintf(`{"sender": "%s"}`, c.State.GetMyAddress())))
-					http.Post("http://"+leader+"/api/notify-consensus", "application/json", body)
+					c.SyncNodeAliveAndWeightsFromLeader(leader)
+
+					// 🔄 Wait until enough nodes are alive (at least 3)
+					maxWait := 2 * time.Second
+					checkInterval := 100 * time.Millisecond
+					waited := time.Duration(0)
+
+					for waited < maxWait {
+						c.aliveStatusMu.RLock()
+						aliveCount := 0
+						for _, alive := range c.nodeAlive {
+							if alive {
+								aliveCount++
+							}
+						}
+						c.aliveStatusMu.RUnlock()
+
+						if aliveCount >= 3 {
+							break
+						}
+						time.Sleep(checkInterval)
+						waited += checkInterval
+					}
 				}
 			}
 			c.UpdateCabinetWeights(ordered)
@@ -166,6 +202,28 @@ func (c *Consensus) ProposeChange(opType, key, value string) bool {
 
 	fmt.Println("❌ Consensus NOT REACHED. Rejecting request.")
 	return false
+}
+func (c *Consensus) SyncNodeAliveAndWeightsFromLeader(leader string) {
+	resp, err := c.httpClient.Get("http://" + leader + "/api/status")
+	if err == nil && resp.StatusCode == http.StatusOK {
+		defer resp.Body.Close()
+		var status map[string]bool
+		if err := json.NewDecoder(resp.Body).Decode(&status); err == nil {
+			c.aliveStatusMu.Lock()
+			for k, v := range status {
+				c.nodeAlive[k] = v
+			}
+			c.aliveStatusMu.Unlock()
+		}
+	}
+	resp2, err2 := c.httpClient.Get("http://" + leader + "/api/weights")
+	if err2 == nil && resp2.StatusCode == http.StatusOK {
+		defer resp2.Body.Close()
+		var weights map[string]float64
+		if err := json.NewDecoder(resp2.Body).Decode(&weights); err == nil {
+			CabinetWeights = weights
+		}
+	}
 }
 
 func isDummyKey(key string) bool {
@@ -268,7 +326,7 @@ func (c *Consensus) HandleApproval(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Consensus) monitorHeartbeat() {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -288,15 +346,23 @@ func (c *Consensus) monitorHeartbeat() {
 				if err == nil && resp.StatusCode == http.StatusOK {
 					var payload map[string]string
 					if err := json.NewDecoder(resp.Body).Decode(&payload); err == nil {
-						leader = payload["leader"]
-						c.State.SetLeader(leader)
-						fmt.Printf("📡 Learned leader from %s: %s\n", node, leader)
-						break
+						testLeader := payload["leader"]
+						if testLeader != "" {
+							// Verify the leader is reachable
+							testResp, err := c.httpClient.Get("http://" + testLeader + "/api/heartbeat")
+							if err == nil && testResp.StatusCode == http.StatusOK {
+								leader = testLeader
+								c.State.SetLeader(leader)
+								fmt.Printf("📡 Learned and verified leader from %s: %s\n", node, leader)
+								break
+							} else {
+								fmt.Printf("⚠️ Ignored stale leader report from %s: %s is unreachable\n", node, testLeader)
+							}
+						}
 					}
 				}
 			}
 
-			// If still unknown, skip this cycle
 			if leader == "" {
 				fmt.Println("🤷 Could not determine leader. Skipping this heartbeat check.")
 				continue
@@ -304,21 +370,36 @@ func (c *Consensus) monitorHeartbeat() {
 		}
 
 		fmt.Printf("⏱️ Checking heartbeat from leader %s...\n", leader)
-
 		resp, err := c.httpClient.Get("http://" + leader + "/api/heartbeat")
+
+		id := serverIDFromAddress(leader)
+		port := portFromAddress(leader)
+		fullAddr := id + ":" + port
+
+		c.aliveStatusMu.Lock()
 		if err == nil && resp.StatusCode == http.StatusOK {
 			c.State.UpdateHeartbeat()
+			c.failureCount[fullAddr] = 0
+			c.nodeAlive[fullAddr] = true
 			fmt.Println("✅ Heartbeat received from leader.")
+			c.aliveStatusMu.Unlock()
 			continue
 		}
 
-		fmt.Printf("❌ Heartbeat failed: %v\n", err)
-
-		if c.State.IsHeartbeatStale(5 * time.Second) {
+		// Increase failure count
+		c.failureCount[fullAddr]++
+		if c.failureCount[fullAddr] >= 2 {
+			c.nodeAlive[fullAddr] = false
+			fmt.Printf("❌ Leader %s marked dead after %d failures.\n", fullAddr, c.failureCount[fullAddr])
+			c.State.SetLeader("")
+			c.aliveStatusMu.Unlock()
 			fmt.Println("🚨 Leader is unresponsive! Starting election...")
 			c.startElection()
 			return
 		}
+		c.aliveStatusMu.Unlock()
+
+		fmt.Printf("❌ Heartbeat to leader failed (%d fails): %v\n", c.failureCount[fullAddr], err)
 	}
 }
 
@@ -402,20 +483,21 @@ func (c *Consensus) startElection() {
 		}
 		// ✅ Auto-trigger dummy write to recalculate CabinetWeights
 		go func() {
-			time.Sleep(1 * time.Second) // optional small delay
+			time.Sleep(300 * time.Millisecond) // optional small delay
 			fmt.Println("📊 Triggering dummy write to refresh CabinetWeights")
 			c.ProposeChange("put", "__cabinet_dummy__", fmt.Sprintf("refresh-%d", time.Now().UnixNano()))
 
 		}()
 	} else {
 		fmt.Println("🙅 This node did not win the election.")
+		go c.monitorHeartbeat()
 	}
 }
 func (c *Consensus) StartHeartbeatBroadcast() {
 	fmt.Println("📡 Starting heartbeat broadcast loop...")
 	fmt.Printf("🔥 Broadcasting heartbeat from Consensus instance: %p\n", c)
 
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
 	for range ticker.C {
