@@ -119,7 +119,7 @@ def main():
     threads = []
     results = []
 
-    print(f"🚀 Starting benchmark: mode={args.mode}, concurrency={args.concurrency}, total_ops={args.ops}")
+    print(f"Starting benchmark: mode={args.mode}, concurrency={args.concurrency}, total_ops={args.ops}")
     start_time = time.time()
 
     for i in range(args.concurrency):
@@ -141,13 +141,13 @@ def main():
     else:
         avg_latency = p95_latency = p99_latency = 0
 
-    print("📊 Benchmark Results")
-    print(f"✅ Success: {total_success}/{args.ops}")
-    print(f"⏱️ Duration: {duration:.2f}s")
-    print(f"🚀 Throughput: {total_success/duration:.2f} ops/sec")
-    print(f"⏱️ Avg Latency: {avg_latency:.2f} ms")
-    print(f"📈 P95 Latency: {p95_latency:.2f} ms")
-    print(f"📈 P99 Latency: {p99_latency:.2f} ms")
+    print("Benchmark Results")
+    print(f"Success: {total_success}/{args.ops}")
+    print(f"Duration: {duration:.2f}s")
+    print(f"Throughput: {total_success/duration:.2f} ops/sec")
+    print(f"Avg Latency: {avg_latency:.2f} ms")
+    print(f"P95 Latency: {p95_latency:.2f} ms")
+    print(f"P99 Latency: {p99_latency:.2f} ms")
 
 if __name__ == "__main__":
     main()
