@@ -100,24 +100,6 @@ Both scripts report success rate, throughput, and latency statistics (Avg, P95, 
 
 ---
 
-## 📂 Folder Structure
-
-| Folder/File         | Description                              |
-|---------------------|------------------------------------------|
-| `main.go`           | Cluster bootstrap logic                  |
-| `consensus/`        | Cabinet/Cabinet++ consensus implementation |
-| `kvstore/`          | Key-value operations and HTTP handlers   |
-| `frontend/`         | `index.html`, `script.js`, `style.css`  |
-| `bench.go`          | Benchmark script                         |
-| `failover.go`       | Benchmark with leader termination        |
-| `docker-compose.yml`| Container setup                          |
-
----
-
-## 📜 License
-
-This project is released under the MIT License.
-
 ---
 
 ## 🙏 Acknowledgments
